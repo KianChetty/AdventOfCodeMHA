@@ -3,132 +3,146 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-class Program
+class DAY5
 {
     static void Main()
     {
+        // Read input file
         string[] inputLines = File.ReadAllLines("puzzleInput.txt");
 
-        List<string> orderingRules = new List<string>();
-        List<List<int>> updatesToPrint = new List<List<int>>();
-        bool isReadingUpdates = false;
+        List<string> orderRules = new List<string>();
+        List<List<int>> printUpdates = new List<List<int>>();
+        bool readingUpdates = false;
 
-        // Read input and split into rules and updates
+        // Read and separate ordering rules from updates
         foreach (var line in inputLines)
         {
-            if (string.IsNullOrWhiteSpace(line)) // Blank line separates rules from updates
+            if (string.IsNullOrWhiteSpace(line))
             {
-                isReadingUpdates = true;
+                readingUpdates = true;
                 continue;
             }
 
-            if (isReadingUpdates)
-                updatesToPrint.Add(line.Split(',').Select(int.Parse).ToList());
+            if (readingUpdates)
+                printUpdates.Add(line.Split(',').Select(int.Parse).ToList());
             else
-                orderingRules.Add(line);
+                orderRules.Add(line);
         }
 
-        // Build a dependency graph from ordering rules
-        Dictionary<int, List<int>> orderGraph = new Dictionary<int, List<int>>();
-        Dictionary<int, int> dependencyCount = new Dictionary<int, int>();
+        // Dictionary to store dependencies
+        Dictionary<int, List<int>> dependencyMap = new Dictionary<int, List<int>>();
 
-        foreach (var rule in orderingRules)
+        foreach (var rule in orderRules)
         {
             var parts = rule.Split('|').Select(int.Parse).ToArray();
-            int beforePage = parts[0], afterPage = parts[1];
+            int firstPage = parts[0], secondPage = parts[1];
 
-            if (!orderGraph.ContainsKey(beforePage))
-                orderGraph[beforePage] = new List<int>();
-            if (!dependencyCount.ContainsKey(beforePage))
-                dependencyCount[beforePage] = 0;
-            if (!dependencyCount.ContainsKey(afterPage))
-                dependencyCount[afterPage] = 0;
+            if (!dependencyMap.ContainsKey(firstPage))
+                dependencyMap[firstPage] = new List<int>();
 
-            orderGraph[beforePage].Add(afterPage);
-            dependencyCount[afterPage]++;
+            dependencyMap[firstPage].Add(secondPage);
         }
 
-        // Identify incorrect updates and fix them
-        List<List<int>> incorrectUpdates = new List<List<int>>();
-        List<List<int>> correctedUpdates = new List<List<int>>();
+        List<List<int>> fixedUpdates = new List<List<int>>();
 
-        foreach (var update in updatesToPrint)
+        foreach (var update in printUpdates)
         {
-            if (IsOrderCorrect(update, orderGraph))
+            if (!IsOrderCorrect(update, dependencyMap))
             {
-                // If update is already correct, no need to fix it
-                continue;
-            }
-            else
-            {
-                // Reorder the incorrect update properly
-                correctedUpdates.Add(ReorderPages(update, orderGraph, dependencyCount));
+                fixedUpdates.Add(ReorderPages(update, dependencyMap));
             }
         }
 
-        // Calculate the sum of the middle pages from the corrected updates
-        int sumOfMiddlePages = correctedUpdates.Select(FindMiddlePage).Sum();
-
-        Console.WriteLine($"Sum of middle pages after correction: {sumOfMiddlePages}");
+        // Sum up the middle pages after fixing incorrect updates
+        int totalMiddlePagesSum = fixedUpdates.Select(GetMiddlePage).Sum();
+        Console.WriteLine($"Sum of middle pages after correction: {totalMiddlePagesSum}");
     }
 
-    // Check if the update follows the given order constraints
-    static bool IsOrderCorrect(List<int> pages, Dictionary<int, List<int>> orderGraph)
+    // Check if the update follows the ordering rules
+    static bool IsOrderCorrect(List<int> pages, Dictionary<int, List<int>> dependencyMap)
     {
-        HashSet<int> pagesSeen = new HashSet<int>();
+        HashSet<int> seenPages = new HashSet<int>();
 
         foreach (var page in pages)
         {
-            pagesSeen.Add(page);
+            seenPages.Add(page);
 
-            if (orderGraph.ContainsKey(page))
+            if (dependencyMap.ContainsKey(page))
             {
-                foreach (int mustComeAfter in orderGraph[page])
+                foreach (int mustComeAfter in dependencyMap[page])
                 {
-                    if (pagesSeen.Contains(mustComeAfter))
-                        return false; 
+                    if (seenPages.Contains(mustComeAfter))
+                        return false;
                 }
             }
         }
         return true;
     }
 
-    // Function to reorder pages correctly using topological sorting
-    static List<int> ReorderPages(List<int> pages, Dictionary<int, List<int>> orderGraph, Dictionary<int, int> dependencyCount)
+    // Function to reorder pages correctly using Topological Sorting
+    static List<int> ReorderPages(List<int> pages, Dictionary<int, List<int>> dependencyMap)
     {
-        // Create a fresh dependency count only for pages in the update
-        Dictionary<int, int> localDependencyCount = new Dictionary<int, int>();
+        Dictionary<int, int> localDependencies = new Dictionary<int, int>();
+
         foreach (var page in pages)
-            if (dependencyCount.ContainsKey(page))
-                localDependencyCount[page] = dependencyCount[page];
-
-        Queue<int> readyToPrint = new Queue<int>();
-        foreach (var page in pages)
-            if (!localDependencyCount.ContainsKey(page) || localDependencyCount[page] == 0)
-                readyToPrint.Enqueue(page);
-
-        List<int> orderedPages = new List<int>();
-
-        while (readyToPrint.Count > 0)
         {
-            int page = readyToPrint.Dequeue();
-            orderedPages.Add(page);
+            localDependencies[page] = 0;
+        }
 
-            if (orderGraph.ContainsKey(page))
+        foreach (var page in pages)
+        {
+            if (dependencyMap.ContainsKey(page))
             {
-                foreach (int dependentPage in orderGraph[page])
+                foreach (int dependentPage in dependencyMap[page])
                 {
-                    if (localDependencyCount.ContainsKey(dependentPage))
+                    if (pages.Contains(dependentPage))
                     {
-                        localDependencyCount[dependentPage]--;
-                        if (localDependencyCount[dependentPage] == 0)
-                            readyToPrint.Enqueue(dependentPage);
+                        localDependencies[dependentPage]++;
                     }
                 }
             }
         }
 
-        return orderedPages;
+        // Pages with no dependencies are ready to be printed first
+        Queue<int> readyToPrint = new Queue<int>();
+        foreach (var page in pages)
+        {
+            if (localDependencies[page] == 0)
+            {
+                readyToPrint.Enqueue(page);
+            }
+        }
+
+        List<int> sortedPages = new List<int>();
+
+        while (readyToPrint.Count > 0)
+        {
+            int page = readyToPrint.Dequeue();
+            sortedPages.Add(page);
+
+            if (dependencyMap.ContainsKey(page))
+            {
+                foreach (int dependentPage in dependencyMap[page])
+                {
+                    if (pages.Contains(dependentPage))
+                    {
+                        localDependencies[dependentPage]--;
+                        if (localDependencies[dependentPage] == 0)
+                        {
+                            readyToPrint.Enqueue(dependentPage);
+                        }
+                    }
+                }
+            }
+        }
+
+        return sortedPages;
     }
 
+    // Get the middle page from an ordered list
+    static int GetMiddlePage(List<int> update)
+    {
+        if (update.Count == 0) return 0;
+        return update[update.Count / 2];
+    }
 }
